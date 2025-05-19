@@ -3716,12 +3716,12 @@ function updateConsentMode(consentData) {
         }
     }
 
-    // Update Google consent with explicit GCS parameter
+    // ✅ Updated: Explicitly pass GCS in gtag()
     gtag('consent', 'update', {
         ...consentStates,
-      
+        'gcs': gcsSignal, // Explicit GCS signal
     });
-    
+
     // Update Microsoft UET consent if enabled
     if (config.uetConfig.enabled) {
         const uetConsentState = consentData.categories.advertising ? 'granted' : 'denied';
@@ -3729,7 +3729,7 @@ function updateConsentMode(consentData) {
             'ad_storage': uetConsentState
         });
         
-        // Push UET consent event to dataLayer with the exact requested format
+        // Push UET consent event to dataLayer
         window.dataLayer.push({
             'event': 'uet_consent_update',
             'uet_consent': {
@@ -3747,7 +3747,7 @@ function updateConsentMode(consentData) {
     window.dataLayer.push({
         'event': 'cookie_consent_update',
         'consent_mode': consentStates,
-        'gcs': gcsSignal,
+        'gcs': gcsSignal, // Also pushed to dataLayer for debugging
         'consent_status': consentData.status,
         'consent_categories': consentData.categories,
         'timestamp': new Date().toISOString(),
