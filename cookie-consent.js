@@ -61,10 +61,40 @@ const config = {
 
 
       // Query parameters to store from URL
-    queryParamsToStore: ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'],
-    
-    // Enable/disable query parameter storage
+       // Query parameters configuration with enhanced security
     storeQuery: true,
+    queryParamsToStore: {
+        allowed: ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'],
+        maxLength: 100,
+        validation: {
+            // Allow most characters but sanitize to prevent XSS/security risks
+            utm_source: /^[\w\s\-.,;:@+!*()&=?%#\/]+$/i,
+            utm_medium: /^[\w\s\-.,;:@+!*()&=?%#\/]+$/i,
+            utm_campaign: /^[\w\s\-.,;:@+!*()&=?%#\/]+$/i,
+            utm_term: /^[\w\s\-.,;:@+!*()&=?%#\/]+$/i,
+            utm_content: /^[\w\s\-.,;:@+!*()&=?%#\/]+$/i
+        },
+        // Sanitize function (applied before validation)
+        sanitize: (param, value) => {
+            // Remove/escape dangerous characters (e.g., <script> tags)
+            return value.replace(/[<>'"\\]/g, "").trim();
+        },
+        // New parameter storage configuration
+        storage: {
+            expirationDays: 30, // Parameters expire after 30 days
+            autoPurge: true,   // Automatically clean expired params
+            maxEntries: 50     // Maximum number of stored parameters
+        }
+    },
+    
+    // Parameter storage configuration
+    paramStorage: {
+        expirationDays: 30,
+        autoPurge: true,
+        retentionPeriod: 30,  // New: how long to keep parameters
+        maxEntries: 50,
+        autoRotate: true
+    },
 
   
     // Microsoft UET Configuration
@@ -354,7 +384,56 @@ geoConfig: {
         }
     }
 };
+// Function to validate and sanitize query parameters
+function validateQueryParam(param, value) {
+    if (!config.storeQuery || !config.queryParamsToStore.allowed.includes(param)) {
+        return null;
+    }
+    
+    // Sanitize first
+    const sanitized = config.queryParamsToStore.sanitize(param, value);
+    
+    // Then validate
+    const validationRegex = config.queryParamsToStore.validation[param];
+    if (validationRegex && !validationRegex.test(sanitized)) {
+        console.warn(`Invalid value for parameter ${param}: ${value}`);
+        return null;
+    }
+    
+    // Check length
+    if (sanitized.length > config.queryParamsToStore.maxLength) {
+        return sanitized.substring(0, config.queryParamsToStore.maxLength);
+    }
+    
+    return sanitized;
+}
 
+// Function to clear stored parameters
+function clearStoredParams() {
+    localStorage.removeItem('storedQueryParams');
+    console.log('Cleared all stored query parameters');
+}
+
+// Function to purge expired parameters
+function purgeExpiredParams() {
+    const stored = localStorage.getItem('storedQueryParams');
+    if (!stored) return;
+    
+    const params = JSON.parse(stored);
+    const now = new Date().getTime();
+    let changed = false;
+    
+    for (const key in params) {
+        if (params[key].expiry && params[key].expiry < now) {
+            delete params[key];
+            changed = true;
+        }
+    }
+    
+    if (changed) {
+        localStorage.setItem('storedQueryParams', JSON.stringify(params));
+    }
+}
 // ============== IMPLEMENTATION SECTION ============== //
 // ============== IMPLEMENTATION SECTION ============== //
 // Initialize dataLayer for Google Tag Manager
@@ -1994,39 +2073,80 @@ function getCookieDuration(name) {
 
 // Function to store query parameters in localStorage
 function storeQueryParams() {
-    if (config.storeQuery) {
-        var queryParams = {};
-        var urlSearchParams = new URLSearchParams(window.location.search);
+    if (!config.storeQuery) return;
 
-        config.queryParamsToStore.forEach(function(key) {
-            if (urlSearchParams.has(key)) {
-                queryParams[key] = urlSearchParams.get(key);
+    // First purge any expired params if autoPurge is enabled
+    if (config.queryParamsToStore.storage.autoPurge) {
+        purgeExpiredParams();
+    }
+
+    const urlSearchParams = new URLSearchParams(window.location.search);
+    const existingParams = JSON.parse(localStorage.getItem('storedQueryParams') || {};
+    const now = new Date();
+    const expiryDate = new Date(now.setDate(now.getDate() + config.queryParamsToStore.storage.expirationDays));
+    
+    // Count existing params to enforce maxEntries
+    const paramCount = Object.keys(existingParams).length;
+    let storedCount = 0;
+
+    for (const param of config.queryParamsToStore.allowed) {
+        if (urlSearchParams.has(param) {
+            const value = urlSearchParams.get(param);
+            const validatedValue = validateQueryParam(param, value);
+            
+            if (validatedValue !== null && storedCount < config.queryParamsToStore.storage.maxEntries) {
+                existingParams[param] = {
+                    value: validatedValue,
+                    expiry: expiryDate.getTime(),
+                    storedAt: new Date().toISOString()
+                };
+                storedCount++;
             }
-        });
-
-        if (Object.keys(queryParams).length > 0) {
-            localStorage.setItem('storedQueryParams', JSON.stringify(queryParams));
         }
+    }
+
+    if (Object.keys(existingParams).length > 0) {
+        localStorage.setItem('storedQueryParams', JSON.stringify(existingParams));
+    } else if (localStorage.getItem('storedQueryParams')) {
+        localStorage.removeItem('storedQueryParams');
     }
 }
 
 // Function to restore stored parameters to URL
 function addStoredParamsToURL() {
-    var storedParams = localStorage.getItem('storedQueryParams');
-    if (storedParams) {
-        var queryParams = JSON.parse(storedParams);
-        var url = new URL(window.location.href);
+    const stored = localStorage.getItem('storedQueryParams');
+    if (!stored) return;
 
-        Object.keys(queryParams).forEach(function(key) {
-            if (!url.searchParams.has(key)) {  // Only add if not already in URL
-                url.searchParams.set(key, queryParams[key]);
-            }
-        });
+    const params = JSON.parse(stored);
+    const url = new URL(window.location.href);
+    const now = new Date().getTime();
+    let paramsAdded = false;
 
+    for (const key in params) {
+        // Skip expired params
+        if (params[key].expiry && params[key].expiry < now) continue;
+        
+        if (!url.searchParams.has(key)) {
+            url.searchParams.set(key, params[key].value);
+            paramsAdded = true;
+        }
+    }
+
+    if (paramsAdded) {
         window.history.replaceState(null, '', url.toString());
     }
 }
-
+function clearStoredParameters() {
+    clearStoredParams();
+    console.log('All stored parameters have been cleared');
+    
+    // Push to dataLayer if you want to track this event
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({
+        'event': 'stored_params_cleared',
+        'timestamp': new Date().toISOString()
+    });
+}
 
 // Generate cookie table with mobile-friendly display
 function generateCookieTable(cookies) {
@@ -3932,6 +4052,7 @@ if (typeof window !== 'undefined') {
         showBanner: showCookieBanner,
         hideBanner: hideCookieBanner,
         showSettings: showCookieSettings,
+        clearStoredParameters: clearStoredParameters,
         acceptAll: acceptAllCookies,
         rejectAll: rejectAllCookies,
         saveSettings: saveCustomSettings,
