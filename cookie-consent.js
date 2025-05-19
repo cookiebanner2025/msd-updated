@@ -3699,30 +3699,27 @@ function updateConsentMode(consentData) {
         'security_storage': 'granted'
     };
 
-    // Determine GCS signal explicitly
-    let gcsParam = '';
+    // Determine GCS signal based on consent status and categories
+    let gcsSignal = 'G100'; // Default to all denied
+    
     if (consentData.status === 'accepted') {
-        gcsParam = 'G111'; // All granted
-    } else if (consentData.status === 'rejected') {
-        gcsParam = 'G100'; // All denied
+        gcsSignal = 'G111'; // All granted
     } else if (consentData.status === 'custom') {
         if (consentData.categories.analytics && !consentData.categories.advertising) {
-            gcsParam = 'G101'; // Analytics granted, ads denied
+            gcsSignal = 'G101'; // Analytics granted, ads denied
         } else if (consentData.categories.advertising && !consentData.categories.analytics) {
-            gcsParam = 'G110'; // Ads granted, analytics denied
+            gcsSignal = 'G110'; // Ads granted, analytics denied
         } else if (consentData.categories.analytics && consentData.categories.advertising) {
-            gcsParam = 'G111'; // Both granted
+            gcsSignal = 'G111'; // Both granted (same as accept all)
         } else {
-            gcsParam = 'G100'; // Both denied
+            gcsSignal = 'G100'; // Both denied (same as reject all)
         }
     }
 
-    // Update Google consent with EXPLICIT GCS signal
+    // Update Google consent with explicit GCS parameter
     gtag('consent', 'update', {
         ...consentStates,
-        'region': ['EU', 'US'], // Optional: Specify regions if needed
-        'wait_for_update': 500, // Optional: Wait 500ms for tags to update
-        'gcs': gcsParam // ✅ EXPLICIT GCS SIGNAL
+      
     });
     
     // Update Microsoft UET consent if enabled
@@ -3888,3 +3885,4 @@ if (typeof window !== 'undefined') {
         config: config
     };
 }
+
