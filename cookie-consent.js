@@ -58,7 +58,15 @@ const config = {
     
     // Privacy policy URL (configurable)
     privacyPolicyUrl: 'https://yourdomain.com/privacy-policy', // Add your full privacy policy URL here
+
+
+      // Query parameters to store from URL
+    queryParamsToStore: ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'],
     
+    // Enable/disable query parameter storage
+    storeQuery: true,
+
+  
     // Microsoft UET Configuration
     // Microsoft UET Configuration
     uetConfig: {
@@ -1982,6 +1990,44 @@ function getCookieDuration(name) {
     return "Session";
 }
 
+
+
+// Function to store query parameters in localStorage
+function storeQueryParams() {
+    if (config.storeQuery) {
+        var queryParams = {};
+        var urlSearchParams = new URLSearchParams(window.location.search);
+
+        config.queryParamsToStore.forEach(function(key) {
+            if (urlSearchParams.has(key)) {
+                queryParams[key] = urlSearchParams.get(key);
+            }
+        });
+
+        if (Object.keys(queryParams).length > 0) {
+            localStorage.setItem('storedQueryParams', JSON.stringify(queryParams));
+        }
+    }
+}
+
+// Function to restore stored parameters to URL
+function addStoredParamsToURL() {
+    var storedParams = localStorage.getItem('storedQueryParams');
+    if (storedParams) {
+        var queryParams = JSON.parse(storedParams);
+        var url = new URL(window.location.href);
+
+        Object.keys(queryParams).forEach(function(key) {
+            if (!url.searchParams.has(key)) {  // Only add if not already in URL
+                url.searchParams.set(key, queryParams[key]);
+            }
+        });
+
+        window.history.replaceState(null, '', url.toString());
+    }
+}
+
+
 // Generate cookie table with mobile-friendly display
 function generateCookieTable(cookies) {
     return `
@@ -3487,6 +3533,9 @@ function acceptAllCookies() {
         timestamp: new Date().getTime()
     };
     
+    // Restore stored query parameters when accepting cookies
+    addStoredParamsToURL();
+    
     setCookie('cookie_consent', JSON.stringify(consentData), 365);
     updateConsentMode(consentData);
     loadCookiesAccordingToConsent(consentData);
@@ -3560,6 +3609,9 @@ function rejectAllCookies() {
 function saveCustomSettings() {
     const analyticsChecked = document.querySelector('input[data-category="analytics"]').checked;
     const advertisingChecked = document.querySelector('input[data-category="advertising"]').checked;
+    
+    // Restore stored query parameters when saving custom settings
+    addStoredParamsToURL();
     
     let gcsSignal;
     if (analyticsChecked && advertisingChecked) {
@@ -3716,12 +3768,12 @@ function updateConsentMode(consentData) {
         }
     }
 
-    // ✅ Updated: Explicitly pass GCS in gtag()
+    // Update Google consent with explicit GCS parameter
     gtag('consent', 'update', {
         ...consentStates,
-        'gcs': gcsSignal, // Explicit GCS signal
+      
     });
-
+    
     // Update Microsoft UET consent if enabled
     if (config.uetConfig.enabled) {
         const uetConsentState = consentData.categories.advertising ? 'granted' : 'denied';
@@ -3729,7 +3781,7 @@ function updateConsentMode(consentData) {
             'ad_storage': uetConsentState
         });
         
-        // Push UET consent event to dataLayer
+        // Push UET consent event to dataLayer with the exact requested format
         window.dataLayer.push({
             'event': 'uet_consent_update',
             'uet_consent': {
@@ -3747,7 +3799,7 @@ function updateConsentMode(consentData) {
     window.dataLayer.push({
         'event': 'cookie_consent_update',
         'consent_mode': consentStates,
-        'gcs': gcsSignal, // Also pushed to dataLayer for debugging
+        'gcs': gcsSignal,
         'consent_status': consentData.status,
         'consent_categories': consentData.categories,
         'timestamp': new Date().toISOString(),
@@ -3793,10 +3845,13 @@ function loadPerformanceCookies() {
 
 // Main execution flow
 document.addEventListener('DOMContentLoaded', async function() {
-      // Ensure location data is loaded first
+    // Ensure location data is loaded first
     if (!sessionStorage.getItem('locationData')) {
         await fetchLocationData();
     }  
+    
+    // Store query parameters on page load
+    storeQueryParams();
    
 
  // Check if domain is allowed
