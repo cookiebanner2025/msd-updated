@@ -404,33 +404,45 @@ window.dataLayer.push({
 // Set default UET consent
 function setDefaultUetConsent() {
     if (!config.uetConfig.enabled) return;
-    // Redundant safeguard
+    
+    // Initialize UET queue if not exists with msd parameter
     if (typeof window.uetq === 'undefined') {
         window.uetq = [];
-        // Set msd if configured
         if (config.uetConfig.msd) {
             window.uetq.push('set', 'msd', config.uetConfig.msd);
         }
     }
+    
     const consentState = config.uetConfig.defaultConsent === 'granted' ? 'granted' : 'denied';
     
+    // Push consent update with additional parameters
     window.uetq.push('consent', 'default', {
-        'ad_storage': consentState
+        'ad_storage': consentState,
+        'data_processing': config.uetConfig.enforceInEEA && EU_COUNTRIES.includes(locationData?.country || '') ? 
+            ['LDU'] : ['GDPR']
     });
     
-    // Push to dataLayer with GCS alignment
+    // Enhanced dataLayer push for UET consent
     window.dataLayer.push({
         'event': 'uet_consent_default',
         'consent_mode': {
             'ad_storage': consentState,
-            'analytics_storage': 'denied', // Mirroring GCS initial state
+            'analytics_storage': 'denied',
             'ad_user_data': 'denied',
             'ad_personalization': 'denied'
         },
-        'gcs': 'G100', // Aligned with initial GCS signal
-        'timestamp': new Date().toISOString()
+        'uet_config': {
+            'msd': config.uetConfig.msd || window.location.hostname,
+            'enforce_eea': config.uetConfig.enforceInEEA,
+            'data_processing': config.uetConfig.enforceInEEA && EU_COUNTRIES.includes(locationData?.country || '') ? 
+                'LDU' : 'GDPR'
+        },
+        'gcs': 'G100',
+        'timestamp': new Date().toISOString(),
+        'location_data': locationData
     });
 }
+
 
 // Enhanced cookie database with detailed descriptions
 const cookieDatabase = {
